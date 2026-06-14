@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>PostScript → PDF 変換</title>
+</head>
+<body>
+  <h1>PostScript → PDF 変換</h1>
+  <p id="status">Ghostscript を読み込み中...</p>
+
+  <div id="dropzone" style="border: 2px dashed #888; padding: 2em; text-align: center;">
+    <p>.ps ファイルをドラッグ&ドロップ、または選択してください</p>
+    <input type="file" id="fileInput" accept=".ps,application/postscript" disabled>
+  </div>
+
+  <div id="fontSection">
+    <h2>カスタムフォント追加(任意)</h2>
+    <p id="fontCandidateMessage">検出されたカスタムフォントはありません</p>
+    <div id="fontList"></div>
+    <button type="button" id="addFontButton" disabled>フォントを追加</button>
+  </div>
+
+  <p id="result"></p>
+  <a id="download" style="display:none">変換結果をダウンロード</a>
+  <iframe id="preview" style="display:none; width:100%; height:600px; border:1px solid #ccc;"></iframe>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const fileInput = document.getElementById('fileInput');
+    const dropzone = document.getElementById('dropzone');
+    const result = document.getElementById('result');
+    const download = document.getElementById('download');
+    const preview = document.getElementById('preview');
+    const fontList = document.getElementById('fontList');
+    const addFontButton = document.getElementById('addFontButton');
+    const fontCandidateMessage = document.getElementById('fontCandidateMessage');
+
+    const worker = new Worker('worker.js');
+    let currentFileName = '';
+    let currentFile = null;
+    let fontCandidates = [];
+
+    // PostScript standard 14 fonts — Ghostscript handles these correctly
+    // without a custom font upload, so they are not useful as font-name
+    // candidates for the custom font UI.
+    const STANDARD_14_FONTS = new Set([
+      'Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique',
+      'Times-Roman', 'Times-Bold', 'Times-Italic', 'Times-BoldItalic',
+      'Courier', 'Courier-Bold', 'Courier-Oblique', 'Courier-BoldOblique',
+      'Symbol', 'ZapfDingbats',
+    ]);
+
+    // Extract font names referenced via `/Name findfont` in PostScript
+    // source, excluding standard 14 fonts and duplicates, in order of
+    // first occurrence.
+    function extractFontNames(text) {
+      const names = [];
+      const seen = new Set();
+      const re = /\/([A-Za-z0-9][A-Za-z0-9+\-.]*)\s+findfont/g;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        const name = m[1];
+        if (STANDARD_14_FONTS.has(name) || seen.has(name)) continue;
+        seen.add(name);
+        names.push(name);
+      }
+      return names;
+    }
+
+    // Rebuild a .font-name <select>'s options from fontCandidates,
+    // keeping the previous selection if it is still a valid candidate.
+    function populateFontNameSelect(select) {
+      const previous = select.value;
+      select.innerHTML = '';
+      for (const name of fontCandidates) {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        select.appendChild(option);
+      }
+      if (fontCandidates.includes(previous)) {
+        select.value = previous;
+      }
+    }
+
+    // Re-scan the selected .ps file for custom font names and refresh
+    // the font candidate UI (message, add-button state, existing rows).
+    function updateFontCandidates(file) {
+      file.text().then((text) => {
+        fontCandidates = extractFontNames(text);
+        fontCandidateMessage.style.display = fontCandidates.length === 0 ? 'block' : 'none';
+        addFontButton.disabled = fontCandidates.length === 0;
+        fontList.querySelectorAll('.font-name').forEach(populateFontNameSelect);
+      });
+    }
+
+    // Re-run the conversion with the currently loaded .ps file after a
+    // custom font row changes, so the preview reflects the new font
+    // configuration without requiring the user to reselect the .ps file.
+    function reconvertIfReady() {
+      if (currentFile && !fileInput.disabled) {
+        convertFile(currentFile);
+      }
+    }
+
+    worker.onmessage = (e) => {
+      const msg = e.data;
+      if (msg.type === 'ready') {
+        statusEl.textContent = '準備完了。.ps ファイルを選択してください。';
+        fileInput.disabled = false;
+      } else if (msg.type === 'result') {
+        const blob = new Blob([msg.data], { type: 'application/pdf' });
+        download.href = URL.createObjectURL(blob);
+        download.download = currentFileName.replace(/\.ps$/i, '') + '.pdf';
+        download.style.display = 'inline';
+        download.textContent = `${download.download} をダウンロード`;
+        preview.src = download.href;
+        preview.style.display = 'block';
+        result.textContent = '変換が完了しました。';
+        statusEl.textContent = '準備完了。.ps ファイルを選択してください。';
+        fileInput.disabled = false;
+      } else if (msg.type === 'error') {
+        result.textContent = `エラー: ${msg.message}`;
+        download.style.display = 'none';
+        preview.style.display = 'none';
+        preview.src = '';
+        statusEl.textContent = '準備完了。.ps ファイルを選択してください。';
+        fileInput.disabled = false;
+      }
+    };
+
+    addFontButton.addEventListener('click', () => {
+      const row = document.createElement('div');
+      row.className = 'font-row';
+      row.innerHTML = `
+        <select class="font-name"></select>
+        <input type="file" class="font-file" accept=".ttf,.otf">
+        <button type="button" class="remove-font">削除</button>
+      `;
+      populateFontNameSelect(row.querySelector('.font-name'));
+      row.querySelector('.remove-font').addEventListener('click', () => {
+        row.remove();
+        reconvertIfReady();
+      });
+      fontList.appendChild(row);
+      reconvertIfReady();
+    });
+
+    function convertFile(file) {
+      currentFileName = file.name;
+      result.textContent = '';
+      download.style.display = 'none';
+      preview.style.display = 'none';
+      preview.src = '';
+      statusEl.textContent = `${file.name} を変換中...`;
+      fileInput.disabled = true;
+
+      const fontReads = Array.from(fontList.querySelectorAll('.font-row'))
+        .map((row) => ({
+          name: row.querySelector('.font-name').value.trim(),
+          file: row.querySelector('.font-file').files[0],
+        }))
+        .filter((f) => f.name && f.file)
+        .map((f) => f.file.arrayBuffer().then((data) => ({ name: f.name, filename: f.file.name, data })));
+
+      Promise.all([file.arrayBuffer(), Promise.all(fontReads)]).then(([buf, fonts]) => {
+        const transfer = [buf, ...fonts.map((f) => f.data)];
+        worker.postMessage({ type: 'convert', name: file.name, data: buf, fonts }, transfer);
+      });
+    }
+
+    fontList.addEventListener('change', (e) => {
+      if (e.target.matches('.font-name, .font-file')) {
+        reconvertIfReady();
+      }
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        currentFile = file;
+        updateFontCandidates(file);
+        convertFile(file);
+      }
+    });
+
+    dropzone.addEventListener('dragover', (e) => e.preventDefault());
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (!fileInput.disabled && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        currentFile = file;
+        updateFontCandidates(file);
+        convertFile(file);
+      }
+    });
+  </script>
+</body>
+</html>

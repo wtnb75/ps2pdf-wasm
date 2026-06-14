@@ -1,0 +1,8 @@
+/site/gs.js
+/site/gs.wasm
+/site/gs.data
+/ghostscript-10.07.1.tar.gz
+/ghostpdl-10.07.1.tar.gz
+/ghostscript-10.07.1/
+.DS_Store
+/node_modules/

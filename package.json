@@ -1,0 +1,17 @@
+{
+  "name": "project-gs",
+  "version": "1.0.0",
+  "description": "PostScript to PDF conversion site (Ghostscript wasm)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint ."
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.5.0",
+    "eslint-plugin-html": "^8.1.4",
+    "globals": "^17.6.0"
+  }
+}

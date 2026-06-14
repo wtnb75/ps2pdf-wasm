@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: '3'
+
+vars:
+  VERSION: 10.07.1
+  URL: "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10071/ghostscript-{{ .VERSION }}.tar.gz"
+
+tasks:
+  default:
+    desc: show tasks
+    cmds:
+      - task -l --sort alphanumeric
+    silent: true
+
+  download:
+    desc: download and extract
+    vars:
+      BNAME:
+        sh: "basename {{ .URL }} .tar.gz"
+    cmds:
+      - "[ -f {{ .BNAME }}.tar.gz ] || curl -sLO {{ .URL }}"
+      - "[ -d {{ .BNAME }} ] || tar xfz {{ .BNAME }}.tar.gz"
+
+  build:
+    desc: build ghostscript wasm and copy artifacts into site/
+    deps: [download]
+    cmds:
+      - bash build.sh
+
+  lint:
+    desc: lint site/ JS (including inline <script> in index.html)
+    cmds:
+      - pnpm install --frozen-lockfile
+      - pnpm run lint
+
+  cleanup:
+    desc: remove extracted source and build artifacts for a clean rebuild
+    cmds:
+      - rm -rf ghostscript-10.07.1
+      - rm -f site/gs.js site/gs.wasm site/gs.data
