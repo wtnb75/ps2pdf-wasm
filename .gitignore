@@ -5,4 +5,5 @@
 /ghostpdl-10.07.1.tar.gz
 /ghostscript-10.07.1/
 .DS_Store
+/.superpowers/
 /node_modules/
