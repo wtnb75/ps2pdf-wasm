@@ -33,6 +33,7 @@
     .font-name {
       font-weight: bold;
       flex: 1 1 100%;
+      overflow-wrap: anywhere;
     }
     .font-file {
       flex: 1 1 auto;
@@ -62,7 +63,7 @@
 
   <p id="result"></p>
   <a id="download" style="display:none">変換結果をダウンロード</a>
-  <iframe id="preview" style="display:none; width:100%; height:70vh; border:1px solid #ccc;"></iframe>
+  <iframe id="preview" style="display:none; width:100%; height:70vh; min-height:300px; border:1px solid #ccc;"></iframe>
 
   <script>
     const statusEl = document.getElementById('status');
