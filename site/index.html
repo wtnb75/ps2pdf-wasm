@@ -17,7 +17,7 @@
     <h2>カスタムフォント追加(任意)</h2>
     <p id="fontCandidateMessage">検出されたカスタムフォントはありません</p>
     <div id="fontList"></div>
-    <button type="button" id="addFontButton" disabled>フォントを追加</button>
+    <button type="button" id="reconvertButton" style="display:none">再描画</button>
   </div>
 
   <p id="result"></p>
@@ -32,13 +32,12 @@
     const download = document.getElementById('download');
     const preview = document.getElementById('preview');
     const fontList = document.getElementById('fontList');
-    const addFontButton = document.getElementById('addFontButton');
+    const reconvertButton = document.getElementById('reconvertButton');
     const fontCandidateMessage = document.getElementById('fontCandidateMessage');
 
     const worker = new Worker('worker.js');
     let currentFileName = '';
     let currentFile = null;
-    let fontCandidates = [];
 
     // PostScript standard 14 fonts — Ghostscript handles these correctly
     // without a custom font upload, so they are not useful as font-name
@@ -67,40 +66,43 @@
       return names;
     }
 
-    // Rebuild a .font-name <select>'s options from fontCandidates,
-    // keeping the previous selection if it is still a valid candidate.
-    function populateFontNameSelect(select) {
-      const previous = select.value;
-      select.innerHTML = '';
-      for (const name of fontCandidates) {
-        const option = document.createElement('option');
-        option.value = name;
-        option.textContent = name;
-        select.appendChild(option);
-      }
-      if (fontCandidates.includes(previous)) {
-        select.value = previous;
-      }
-    }
-
-    // Re-scan the selected .ps file for custom font names and refresh
-    // the font candidate UI (message, add-button state, existing rows).
+    // Re-scan the selected .ps file for custom font names and rebuild the
+    // font row UI: one row per detected font name, each with a file input
+    // for uploading that font and a button to clear the selection. Also
+    // shows/hides the "再描画" button depending on whether any custom
+    // fonts were detected.
     function updateFontCandidates(file) {
-      file.text().then((text) => {
-        fontCandidates = extractFontNames(text);
+      return file.text().then((text) => {
+        const fontCandidates = extractFontNames(text);
         fontCandidateMessage.style.display = fontCandidates.length === 0 ? 'block' : 'none';
-        addFontButton.disabled = fontCandidates.length === 0;
-        fontList.querySelectorAll('.font-name').forEach(populateFontNameSelect);
-      });
-    }
+        fontList.innerHTML = '';
+        for (const name of fontCandidates) {
+          const row = document.createElement('div');
+          row.className = 'font-row';
 
-    // Re-run the conversion with the currently loaded .ps file after a
-    // custom font row changes, so the preview reflects the new font
-    // configuration without requiring the user to reselect the .ps file.
-    function reconvertIfReady() {
-      if (currentFile && !fileInput.disabled) {
-        convertFile(currentFile);
-      }
+          const nameEl = document.createElement('span');
+          nameEl.className = 'font-name';
+          nameEl.textContent = name;
+
+          const fileEl = document.createElement('input');
+          fileEl.type = 'file';
+          fileEl.className = 'font-file';
+          fileEl.accept = '.ttf,.otf';
+
+          const clearButton = document.createElement('button');
+          clearButton.type = 'button';
+          clearButton.className = 'clear-font';
+          clearButton.textContent = 'クリア';
+          clearButton.addEventListener('click', () => {
+            fileEl.value = '';
+          });
+
+          row.append(nameEl, fileEl, clearButton);
+          fontList.appendChild(row);
+        }
+        reconvertButton.style.display = fontCandidates.length > 0 ? 'inline' : 'none';
+        reconvertButton.disabled = fileInput.disabled;
+      });
     }
 
     worker.onmessage = (e) => {
@@ -119,6 +121,7 @@
         result.textContent = '変換が完了しました。';
         statusEl.textContent = '準備完了。.ps ファイルを選択してください。';
         fileInput.disabled = false;
+        reconvertButton.disabled = false;
       } else if (msg.type === 'error') {
         result.textContent = `エラー: ${msg.message}`;
         download.style.display = 'none';
@@ -126,25 +129,9 @@
         preview.src = '';
         statusEl.textContent = '準備完了。.ps ファイルを選択してください。';
         fileInput.disabled = false;
+        reconvertButton.disabled = false;
       }
     };
-
-    addFontButton.addEventListener('click', () => {
-      const row = document.createElement('div');
-      row.className = 'font-row';
-      row.innerHTML = `
-        <select class="font-name"></select>
-        <input type="file" class="font-file" accept=".ttf,.otf">
-        <button type="button" class="remove-font">削除</button>
-      `;
-      populateFontNameSelect(row.querySelector('.font-name'));
-      row.querySelector('.remove-font').addEventListener('click', () => {
-        row.remove();
-        reconvertIfReady();
-      });
-      fontList.appendChild(row);
-      reconvertIfReady();
-    });
 
     function convertFile(file) {
       currentFileName = file.name;
@@ -154,10 +141,11 @@
       preview.src = '';
       statusEl.textContent = `${file.name} を変換中...`;
       fileInput.disabled = true;
+      reconvertButton.disabled = true;
 
       const fontReads = Array.from(fontList.querySelectorAll('.font-row'))
         .map((row) => ({
-          name: row.querySelector('.font-name').value.trim(),
+          name: row.querySelector('.font-name').textContent.trim(),
           file: row.querySelector('.font-file').files[0],
         }))
         .filter((f) => f.name && f.file)
@@ -169,9 +157,9 @@
       });
     }
 
-    fontList.addEventListener('change', (e) => {
-      if (e.target.matches('.font-name, .font-file')) {
-        reconvertIfReady();
+    reconvertButton.addEventListener('click', () => {
+      if (currentFile) {
+        convertFile(currentFile);
       }
     });
 
