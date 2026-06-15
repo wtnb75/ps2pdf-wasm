@@ -2,7 +2,49 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PostScript → PDF 変換</title>
+  <style>
+    body {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 1em;
+      font-size: 1rem;
+      font-family: sans-serif;
+      box-sizing: border-box;
+    }
+    input, button {
+      font-size: 1rem;
+    }
+    button {
+      padding: 0.6em 1.2em;
+      min-height: 44px;
+    }
+    .font-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5em;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 0.5em;
+      margin-bottom: 0.5em;
+    }
+    .font-name {
+      font-weight: bold;
+      flex: 1 1 100%;
+      overflow-wrap: anywhere;
+    }
+    .font-file {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    #reconvertButton {
+      display: block;
+      width: 100%;
+      margin-top: 0.5em;
+    }
+  </style>
 </head>
 <body>
   <h1>PostScript → PDF 変換</h1>
@@ -21,7 +63,7 @@
 
   <p id="result"></p>
   <a id="download" style="display:none">変換結果をダウンロード</a>
-  <iframe id="preview" style="display:none; width:100%; height:600px; border:1px solid #ccc;"></iframe>
+  <iframe id="preview" style="display:none; width:100%; height:70vh; min-height:300px; border:1px solid #ccc;"></iframe>
 
   <script>
     const statusEl = document.getElementById('status');
