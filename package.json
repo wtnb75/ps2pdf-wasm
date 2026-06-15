@@ -4,6 +4,7 @@
   "description": "PostScript to PDF conversion site (Ghostscript wasm)",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
     "lint": "eslint ."
   },
