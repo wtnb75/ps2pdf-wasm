@@ -1,38 +1,69 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>PostScript → PDF 変換</title>
-</head>
-<body>
-  <h1>PostScript → PDF 変換</h1>
-  <p id="status">Ghostscript を読み込み中...</p>
+# ps2pdfカスタムフォントUI改善 Implementation Plan
 
-  <div id="dropzone" style="border: 2px dashed #888; padding: 2em; text-align: center;">
-    <p>.ps ファイルをドラッグ&ドロップ、または選択してください</p>
-    <input type="file" id="fileInput" accept=".ps,application/postscript" disabled>
-  </div>
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-  <div id="fontSection" style="display:none">
+**Goal:** `.ps`アップロード時に検出された各カスタムフォントについてフォント行を自動表示し、
+フォントアップロード自体では再変換せず「再描画」ボタンでのみ反映するように`site/index.html`を
+変更する。
+
+**Architecture:** `site/index.html`内のインライン`<script>`のみを変更する。`#fontSection`の
+HTML構造を「検出フォント行(フォント名ラベル+ファイル入力+クリアボタン)」+「再描画ボタン」に
+変更し、`updateFontCandidates()`をフォント行生成関数として書き換え、自動再変換ロジック
+(`reconvertIfReady`・`fontList`の`change`リスナー)を削除して「再描画」ボタンのクリック
+ハンドラに置き換える。`site/worker.js`は変更しない。
+
+**Tech Stack:** Vanilla JavaScript (DOM API), HTML, `site/worker.js`(Ghostscript wasm Web
+Worker、変更なし)。
+
+参照: `docs/superpowers/specs/2026-06-15-ps2pdf-font-ui-improvements-design.md`
+
+---
+
+### Task 1: フォントUIの自動行表示・再描画ボタンへの変更
+
+**Files:**
+- Modify: `site/index.html`
+
+- [ ] **Step 1: `#fontSection`のHTMLを変更する**
+
+`site/index.html`の現在の以下のブロック(16-21行目):
+
+```html
+  <div id="fontSection">
     <h2>カスタムフォント追加(任意)</h2>
+    <p id="fontCandidateMessage">検出されたカスタムフォントはありません</p>
     <div id="fontList"></div>
-    <button type="button" id="reconvertButton">再描画</button>
+    <button type="button" id="addFontButton" disabled>フォントを追加</button>
   </div>
+```
 
-  <p id="result"></p>
-  <a id="download" style="display:none">変換結果をダウンロード</a>
-  <iframe id="preview" style="display:none; width:100%; height:600px; border:1px solid #ccc;"></iframe>
+を次のように変更する(「フォントを追加」ボタンを削除し、「再描画」ボタンを追加、初期状態
+では非表示にする):
 
-  <script>
+```html
+  <div id="fontSection">
+    <h2>カスタムフォント追加(任意)</h2>
+    <p id="fontCandidateMessage">検出されたカスタムフォントはありません</p>
+    <div id="fontList"></div>
+    <button type="button" id="reconvertButton" style="display:none">再描画</button>
+  </div>
+```
+
+- [ ] **Step 2: インライン`<script>`の内容を全体的に書き換える**
+
+`site/index.html`の`<script>`タグ(27行目)から`</script>`タグ(197行目)までの内容を、
+次の内容で完全に置き換える:
+
+```javascript
     const statusEl = document.getElementById('status');
     const fileInput = document.getElementById('fileInput');
     const dropzone = document.getElementById('dropzone');
     const result = document.getElementById('result');
     const download = document.getElementById('download');
     const preview = document.getElementById('preview');
-    const fontSection = document.getElementById('fontSection');
     const fontList = document.getElementById('fontList');
     const reconvertButton = document.getElementById('reconvertButton');
+    const fontCandidateMessage = document.getElementById('fontCandidateMessage');
 
     const worker = new Worker('worker.js');
     let currentFileName = '';
@@ -67,13 +98,13 @@
 
     // Re-scan the selected .ps file for custom font names and rebuild the
     // font row UI: one row per detected font name, each with a file input
-    // for uploading that font and a button to clear the selection. The
-    // whole "カスタムフォント追加" section is shown only when at least one
-    // custom font is detected.
+    // for uploading that font and a button to clear the selection. Also
+    // shows/hides the "再描画" button depending on whether any custom
+    // fonts were detected.
     function updateFontCandidates(file) {
       return file.text().then((text) => {
         const fontCandidates = extractFontNames(text);
-        fontSection.style.display = fontCandidates.length > 0 ? 'block' : 'none';
+        fontCandidateMessage.style.display = fontCandidates.length === 0 ? 'block' : 'none';
         fontList.innerHTML = '';
         for (const name of fontCandidates) {
           const row = document.createElement('div');
@@ -99,9 +130,8 @@
           row.append(nameEl, fileEl, clearButton);
           fontList.appendChild(row);
         }
-        // updateFontCandidates is only called right before convertFile(), while
-        // fileInput is not disabled, so the button should always be enabled here.
-        reconvertButton.disabled = false;
+        reconvertButton.style.display = fontCandidates.length > 0 ? 'inline' : 'none';
+        reconvertButton.disabled = fileInput.disabled;
       });
     }
 
@@ -182,6 +212,57 @@
         convertFile(file);
       }
     });
-  </script>
-</body>
-</html>
+```
+
+Note: keep the surrounding `<script>` / `</script>` tags and their existing
+indentation (4 spaces) as in the original file — only the content between them
+changes.
+
+- [ ] **Step 3: 構文確認(`node --check`)を行う**
+
+```bash
+node -e "
+const fs = require('fs');
+const html = fs.readFileSync('site/index.html', 'utf8');
+const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+fs.writeFileSync('/tmp/index-script-check.js', script);
+"
+node --check /tmp/index-script-check.js
+```
+
+Expected: no output (no syntax error).
+
+- [ ] **Step 4: `task lint`を実行する**
+
+```bash
+task lint
+```
+
+Expected: exit code 0、エラーなし。`addFontButton`・`fontCandidates`・
+`populateFontNameSelect`・`reconvertIfReady`への参照が残っていないこと
+(`no-undef`/`no-unused-vars`エラーが出ないこと)を確認する。
+
+- [ ] **Step 5: コミットする**
+
+```bash
+git add site/index.html
+git commit -m "Auto-show custom font rows per detected font and add a redraw button"
+```
+
+---
+
+## Self-Review
+
+- **Spec coverage**: design docの各項目に対応 — フォント行自動表示・クリアボタン(Step 2の
+  `updateFontCandidates`)、再描画ボタンの表示条件/disabled制御/初期状態(Step 1の
+  `reconvertButton`要素 + Step 2の`reconvertButton.style.display`/`disabled`設定)、
+  自動再変換の廃止(Step 2で`reconvertIfReady`・`fontList`の`change`リスナーを削除し
+  `reconvertButton`のクリックハンドラに一本化)、`convertFile()`の`fontReads`変更
+  (`.font-name`を`<select>`の`value`から`<span>`の`textContent`に変更)。`worker.js`は
+  変更不要(design 5.)。
+- **Placeholder scan**: 全ステップに完全なHTML/JSコードと実行コマンド・期待結果を記載。
+- **Type/naming consistency**: `reconvertButton`・`updateFontCandidates`・`convertFile`・
+  `currentFile`・`fontList`・`.font-name`/`.font-file`/`.clear-font`はStep 1とStep 2で
+  一貫している。`fontCandidates`は関数ローカル変数として扱い、グローバル変数としては
+  削除(旧コードのグローバル`fontCandidates`・`populateFontNameSelect`・`addFontButton`・
+  `reconvertIfReady`はすべて新コードに存在しない)。
