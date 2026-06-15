@@ -101,7 +101,9 @@
           fontList.appendChild(row);
         }
         reconvertButton.style.display = fontCandidates.length > 0 ? 'inline' : 'none';
-        reconvertButton.disabled = fileInput.disabled;
+        // updateFontCandidates is only called right before convertFile(), while
+        // fileInput is not disabled, so the button should always be enabled here.
+        reconvertButton.disabled = false;
       });
     }
 
